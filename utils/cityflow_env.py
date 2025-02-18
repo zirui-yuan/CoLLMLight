@@ -9,6 +9,7 @@ import time
 from multiprocessing import Process
 from .my_utils import load_json, calculate_road_length
 from functools import reduce
+import copy
 
 location_dict = {"North": "N", "South": "S", "East": "E", "West": "W"}
 location_dict_reverse = {"N": "North", "S": "South", "E": "East", "W": "West"}
@@ -507,6 +508,13 @@ class CityFlowEnv:
             path_to_log_file = os.path.join(self.path_to_log, "inter_{0}.pkl".format(inter_ind))
             f = open(path_to_log_file, "wb")
             f.close()
+    
+    # def __deepcopy__(self, memo):
+    #     new_obj = CityFlowEnv(self.path_to_log,self.path_to_work_directory,self.dic_traffic_env_conf,self.dic_path)
+    #     for k, v in self.__dict__.items():
+    #         if not isinstance(v, engine.Engine):
+    #             setattr(new_obj, k, copy.deepcopy(v, memo))
+    #     return new_obj
 
     def reset(self):
         print(" ============= self.eng.reset() to be implemented ==========")
@@ -518,7 +526,7 @@ class CityFlowEnv:
             "roadnetFile": self.dic_traffic_env_conf["ROADNET_FILE"],
             "flowFile": self.dic_traffic_env_conf["TRAFFIC_FILE"],
             "rlTrafficLight": True,
-            "saveReplay": True,  # if "GPT" in self.dic_traffic_env_conf["MODEL_NAME"] or "llm" in self.dic_traffic_env_conf["MODEL_NAME"] else False,
+            "saveReplay": False,  # if "GPT" in self.dic_traffic_env_conf["MODEL_NAME"] or "llm" in self.dic_traffic_env_conf["MODEL_NAME"] else False,
             "roadnetLogFile": f"./{self.dic_traffic_env_conf['ROADNET_FILE']}-{self.dic_traffic_env_conf['TRAFFIC_FILE']}-{self.dic_traffic_env_conf['MODEL_NAME']}-{len(self.dic_traffic_env_conf['PHASE'])}_Phases-roadnetLogFile.json",
             "replayLogFile": f"./{self.dic_traffic_env_conf['ROADNET_FILE']}-{self.dic_traffic_env_conf['TRAFFIC_FILE']}-{self.dic_traffic_env_conf['MODEL_NAME']}-{len(self.dic_traffic_env_conf['PHASE'])}_Phases-replayLogFile.txt"
         }

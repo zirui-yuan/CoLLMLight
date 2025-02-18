@@ -17,7 +17,7 @@ def parse_args():
     parser.add_argument("--multi_process", action="store_true", default=True)
     parser.add_argument("--workers", type=int, default=1)
     parser.add_argument("--dataset", type=str, default="jinan")
-    parser.add_argument("--traffic_file", type=str, default="anon_3_4_jinan_real.json")
+    parser.add_argument("--traffic_file", type=str, default="anon_3_4_jinan_real_2000.json")
     parser.add_argument("--duration", type=int, default=30)
     return parser.parse_args()
 

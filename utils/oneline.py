@@ -8,6 +8,7 @@ import time
 import numpy as np
 import wandb
 from tqdm import tqdm
+import datetime
 import threading
 
 class OneLine:
@@ -69,6 +70,11 @@ class OneLine:
 
     def train(self, round):
         print("================ start train ================")
+        timestamp = datetime.datetime.now().strftime('%Y%m%d')
+        agent_name = self.dic_traffic_env_conf["MODEL_NAME"]
+        agent_data = f"{agent_name}-{self.roadnet}-{self.trafficflow}"
+        self.out_file_name = f"{agent_data}-{timestamp}"
+        
         total_run_cnt = self.dic_traffic_env_conf["RUN_COUNTS"]
         # initialize output streams
         file_name_memory = os.path.join(self.dic_path["PATH_TO_WORK_DIRECTORY"], "memories.txt")
@@ -188,13 +194,19 @@ class OneLine:
                         vehicle_travel_times[veh].append(leave_time - enter_time)
 
         total_travel_time = np.mean([sum(vehicle_travel_times[veh]) for veh in vehicle_travel_times])
+        throughput = self.calc_throughput()
 
+        
         results = {
             "test_reward_over": total_reward,
+            "test_throughput_over": throughput,
             "test_avg_queue_len_over": np.mean(queue_length_episode) if len(queue_length_episode) > 0 else 0,
             "test_queuing_vehicle_num_over": np.sum(queue_length_episode) if len(queue_length_episode) > 0 else 0,
             "test_avg_waiting_time_over": np.mean(waiting_time_episode) if len(queue_length_episode) > 0 else 0,
             "test_avg_travel_time_over": total_travel_time}
+        with open('./results/latest_results/{}.txt'.format(self.out_file_name), 'w') as f:
+            for key, value in results.items():
+                f.write(f"{key}: {value}\n")
         logger.log(results)
         print(results)
         f_state_action = os.path.join(self.dic_path["PATH_TO_WORK_DIRECTORY"], "state_action.json")
@@ -206,3 +218,28 @@ class OneLine:
         self.env.batch_log_2()
 
         return results
+    
+    def calc_throughput(self):
+        current_time = self.env.get_current_time()
+        vehicle_travel_times = {}
+        all_veh = []
+        not_leave_veh = []
+        for inter in self.env.list_intersection:
+            arrive_left_times = inter.dic_vehicle_arrive_leave_time
+            for veh in arrive_left_times:
+                all_veh.append(veh)
+                if "shadow" in veh:
+                    continue
+                enter_time = arrive_left_times[veh]["enter_time"]
+                leave_time = arrive_left_times[veh]["leave_time"]
+                if np.isnan(leave_time):
+                    not_leave_veh.append(veh)
+                if not np.isnan(enter_time):
+                    leave_time = leave_time if not np.isnan(leave_time) else current_time
+                    if veh not in vehicle_travel_times:
+                        vehicle_travel_times[veh] = [leave_time - enter_time]
+                    else:
+                        vehicle_travel_times[veh].append(leave_time - enter_time)
+        leave_veh = list(set(all_veh) - set(not_leave_veh))
+        throughput = len(leave_veh)
+        return throughput

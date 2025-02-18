@@ -1,4 +1,4 @@
-from utils.my_utils import load_json, dump_json, get_state_detail, state2text, getPrompt, action2code, code2action, eight_phase_list, four_phase_list, torch_gc
+from utils.my_utils import load_json, dump_json, get_state_detail, state2text, getPrompt, action2code, code2action, eight_phase_list, four_phase_list, torch_gc, getNCPrompt
 import os
 import time
 import numpy as np
@@ -19,6 +19,8 @@ import json
 import shutil
 import copy
 import random
+import datetime
+from vllm import LLM, SamplingParams
 
 def merge(dic_tmp, dic_to_change):
     dic_result = copy.deepcopy(dic_tmp)
@@ -642,6 +644,7 @@ class LLM_Inference:
     def __init__(self, dic_agent_conf, dic_traffic_env_conf, dic_path, roadnet, trafficflow):
         self.dic_agent_conf = dic_agent_conf
         self.dic_traffic_env_conf = dic_traffic_env_conf
+        
         self.dic_path = dic_path
         self.agents = []
         self.env = None
@@ -657,40 +660,51 @@ class LLM_Inference:
         self.training_args = None
         self.trainer_built = False
         self.trainer = None
-        self.device = None
+        self.device = "cuda"
         self.fail_log_file = f"./fails/{self.dic_agent_conf['LLM_MODEL']}-{self.dic_traffic_env_conf['TRAFFIC_FILE']}-{self.dic_traffic_env_conf['ROADNET_FILE']}.json"
         self.fail_logs = []
         self.initialize()
 
     def initialize_llm(self):
-        device_map = "auto"
+        # device_map = "auto"
+        device_map = self.device
 
         # init LLM
         llm_path = self.dic_agent_conf["LLM_PATH"]
-        self.llm_model = AutoModelForCausalLM.from_pretrained(
-            llm_path,
-            torch_dtype=torch.bfloat16,
-            device_map=device_map,
-        )
 
+        # self.llm_model = AutoModelForCausalLM.from_pretrained(
+        #     llm_path,
+        #     torch_dtype=torch.bfloat16,
+        #     device_map=device_map,
+        # )
         # init tokenizer
-        self.tokenizer = AutoTokenizer.from_pretrained(
-            llm_path,
-            padding_side="left",
-            padding=True
-        )
-        self.tokenizer.pad_token_id = 0
+        # self.tokenizer = AutoTokenizer.from_pretrained(
+        #     llm_path,
+        #     padding_side="left",
+        #     padding=True
+        # )
+        # self.tokenizer.pad_token_id = self.tokenizer.eos_token_id
 
-        self.test_generation_kwargs = {
-            "min_length": -1,
-            "top_k": 50,
-            "top_p": 1.0,
-            "temperature": 0.1,
-            "do_sample": True,
-            "max_new_tokens": self.dic_agent_conf["NEW_MAX_TOKENS"],
-            "pad_token_id": self.tokenizer.pad_token_id,
-            "eos_token_id": self.tokenizer.eos_token_id
-        }
+        # terminators = [
+        #     self.tokenizer.eos_token_id,
+        #     self.tokenizer.convert_tokens_to_ids("<|eot_id|>")
+        # ]
+
+
+        # self.test_generation_kwargs = {
+        #     # "min_length": -1,
+        #     "top_k": 50,
+        #     "top_p": 1.0,
+        #     "temperature": 0.1,
+        #     "do_sample": True,
+        #     "max_new_tokens": self.dic_agent_conf["NEW_MAX_TOKENS"],
+        #     "pad_token_id": self.tokenizer.pad_token_id,
+        #     "eos_token_id": terminators
+        # }
+        self.sampling_params = SamplingParams(temperature=0.1, top_p=0.95, top_k=50, stop_token_ids = [128001, 128009], max_tokens= self.dic_agent_conf["NEW_MAX_TOKENS"])
+        self.llm_model = LLM(model=llm_path,trust_remote_code=True,gpu_memory_utilization=0.8, tensor_parallel_size=1) 
+
+        
 
     def initialize(self):
         path_check(self.dic_path)
@@ -721,7 +735,7 @@ class LLM_Inference:
         start_time = time.time()
         state_action_log = [[] for _ in range(len(state))]
 
-        self.llm_model.eval()
+        # self.llm_model.eval()
         for step_num in tqdm(range(int(total_run_cnt / self.dic_traffic_env_conf['MIN_ACTION_TIME']))):
             if done or current_time >= total_run_cnt:
                 break
@@ -736,30 +750,46 @@ class LLM_Inference:
                 state_action_log[i].append({"state": statistic_state, "state_incoming": statistic_state_incoming,
                                             "approaching_speed": mean_speed})
                 current_states.append(statistic_state)
-
+ 
             prompts = []
-            for s in current_states:
-                prompt = getPrompt(state2text(s))
-                prompt = prompt[0]['content'] + "\n\n### Instruction:\n" + prompt[1]['content'] + "\n\n### Response:\n"
-                prompts.append(prompt)
-            inputs = self.tokenizer(prompts, truncation=True, max_length=2048, padding=True, return_tensors='pt').to('cuda')
+            if self.dic_agent_conf['MODE'] == "Normal":
+                for s in current_states:
+                    prompt = getPrompt(state2text(s))
+                    prompt = prompt[0]['content'] + "\n\n### Instruction:\n" + prompt[1]['content'] + "\n\n### Response:\n"
+                    prompts.append(prompt)
+            elif self.dic_agent_conf['MODE'] == "NC":
+                for i in range(len(current_states)):
+                    prompt = getNCPrompt(i, current_states, self.env)
+                    prompt = prompt[0]['content'] + "\n\n### Instruction:\n" + prompt[1]['content'] + "\n\n### Response:\n"
+                    prompts.append(prompt)
+            ## LLM
+            # inputs = self.tokenizer(prompts, truncation=True, max_length=4096, padding=True, return_tensors='pt').to(self.llm_model.device)
+            # responses = []
+            # previous_flag = 0
+            # for i in range(len(current_states)):
+            #     if (i + 1) % 16 == 0 or i + 1 >= len(current_states): #batch_size
+            #         response_ids = self.llm_model.generate(input_ids=inputs["input_ids"][previous_flag:i+1], **self.test_generation_kwargs)
+            #         responses += self.tokenizer.batch_decode(response_ids, skip_special_tokens=True)
+            #         previous_flag = i + 1
 
+            #vLLM
             responses = []
-            previous_flag = 0
-            for i in range(len(current_states)):
-                if (i + 1) % 16 == 0 or i + 1 >= len(current_states):
-                    response_ids = self.llm_model.generate(input_ids=inputs["input_ids"][previous_flag:i+1], **self.test_generation_kwargs)
-                    responses += self.tokenizer.batch_decode(response_ids, skip_special_tokens=True)
-                    previous_flag = i + 1
+            outputs = self.llm_model.generate(prompts, self.sampling_params)
+            for output in outputs:
+                # prompt = output.prompt
+                generated_text = output.outputs[0].text
+                responses.append(generated_text)
+                # print(f"Prompt: {prompt!r}, Generated text: {generated_text!r}")
 
             fail_num = 0
             vehicle_nums = self.get_vehicle_num(current_states)
             critic_actions = []
             for i, res in enumerate(responses):
-                res = res[len(prompts[i]):]
+                # res = res[len(prompts[i]):]
                 signal_answer_pattern = r'<signal>(.*?)</signal>'
                 signals = re.findall(signal_answer_pattern, res)
-                signal_text = signals[-1] if len(signals) > 0 else "ETWT"
+                signal_text = signals[0] if len(signals) > 0 else "ETWT"
+                # signal_text = signals[-1] if len(signals) > 0 else "ETWT"
                 action_list.append(action2code(signal_text) if signal_text in four_phase_list else 0)
                 if len(signals) == 0 or signal_text not in four_phase_list:
                     signal_text = "ETWT"
@@ -783,7 +813,7 @@ class LLM_Inference:
             for inter in self.env.list_intersection:
                 queue_length_inter.append(sum(inter.dic_feature['lane_num_waiting_vehicle_in']))
             queue_length_episode.append(sum(queue_length_inter))
-            print("Fail Num:", fail_num, "Queuing Vehicles:", sum(queue_length_episode))
+            print("Fail Num:", fail_num, "Avg Queuing Vehicles:", sum(queue_length_inter)/self.dic_traffic_env_conf["NUM_INTERSECTIONS"])
 
             # waiting time
             waiting_times = []
@@ -808,14 +838,22 @@ class LLM_Inference:
                         vehicle_travel_times[veh].append(leave_time - enter_time)
 
         total_travel_time = np.mean([sum(vehicle_travel_times[veh]) for veh in vehicle_travel_times])
-
+        throughput = self.calc_throughput()
         results = {
             "test_reward_over": total_reward,
             "test_avg_queue_len_over": np.mean(queue_length_episode) if len(queue_length_episode) > 0 else 0,
             "test_queuing_vehicle_num_over": np.sum(queue_length_episode) if len(queue_length_episode) > 0 else 0,
             "test_avg_waiting_time_over": np.mean(waiting_time_episode) if len(queue_length_episode) > 0 else 0,
-            "test_avg_travel_time_over": total_travel_time}
+            "test_avg_travel_time_over": total_travel_time, 
+            "test_throughput": throughput}
         logger.log(results)
+        timestamp = datetime.datetime.now().strftime('%Y%m%d')
+        self.memo = self.dic_agent_conf['LLM_MODEL']
+        self.dataset_name = self.dic_traffic_env_conf['TRAFFIC_FILE'].replace('.json', '')
+        self.out_file_name = f"{self.memo}-{self.dataset_name}-{timestamp}"
+        with open('./results/latest_results/{}.txt'.format(self.out_file_name), 'w') as f:
+            for key, value in results.items():
+                f.write(f"{key}: {value}\n")
         print("Test Round:", test_round, results)
         f_state_action = os.path.join(self.dic_path["PATH_TO_WORK_DIRECTORY"], "state_action.json")
         dump_json(state_action_log, f_state_action)
@@ -824,6 +862,31 @@ class LLM_Inference:
         self.env.batch_log_2()
 
         return results
+    def calc_throughput(self):
+        current_time = self.env.get_current_time()
+        vehicle_travel_times = {}
+        all_veh = []
+        not_leave_veh = []
+        for inter in self.env.list_intersection:
+            arrive_left_times = inter.dic_vehicle_arrive_leave_time
+            for veh in arrive_left_times:
+                all_veh.append(veh)
+                if "shadow" in veh:
+                    continue
+                enter_time = arrive_left_times[veh]["enter_time"]
+                leave_time = arrive_left_times[veh]["leave_time"]
+                if np.isnan(leave_time):
+                    not_leave_veh.append(veh)
+                if not np.isnan(enter_time):
+                    leave_time = leave_time if not np.isnan(leave_time) else current_time
+                    if veh not in vehicle_travel_times:
+                        vehicle_travel_times[veh] = [leave_time - enter_time]
+                    else:
+                        vehicle_travel_times[veh].append(leave_time - enter_time)
+        leave_veh = list(set(all_veh) - set(not_leave_veh))
+        throughput = len(leave_veh)
+
+        return throughput
 
     def train_test(self):
         all_config = merge(merge(self.dic_agent_conf, self.dic_path), self.dic_traffic_env_conf)

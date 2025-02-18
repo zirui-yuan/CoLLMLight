@@ -94,7 +94,7 @@ class AdvancedMPLightAgent(NetworkAgent):
             q_values = Lambda(lambda x: K.sum(x, axis=2), name="q_values")(Reshape((4, 3))(before_merge))
         network = Model(inputs=[dic_input_node[feature_name] for feature_name in ["feat1", "feat2", "feat3"]],
                         outputs=q_values)
-        network.compile(optimizer=Adam(lr=self.dic_agent_conf["LEARNING_RATE"], epsilon=1e-08),
+        network.compile(optimizer=Adam(learning_rate=self.dic_agent_conf["LEARNING_RATE"], epsilon=1e-08),
                         loss=self.dic_agent_conf["LOSS_FUNCTION"])
         network.summary()
 

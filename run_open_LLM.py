@@ -14,17 +14,20 @@ from utils.utils import merge
 
 def parse_args():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--memo", type=str, default='LLMTLCSRun')
-    parser.add_argument("--llm_model", type=str, default="llama_cgpr_13b_jinan_1")
-    parser.add_argument("--llm_path", type=str, default="./ft_models/merged/llama_cgpr_13b_jinan_1")
+    parser.add_argument("--memo", type=str, default='lightgpt')
+    parser.add_argument("--llm_model", type=str, default="lightgpt_llama3.1_8b_TSCS_synthetic")
+    parser.add_argument("--llm_path", type=str, default=None)
     parser.add_argument("--num_rounds", type=int, default=1)
-    parser.add_argument("--new_max_tokens", type=int, default=1024)
-    parser.add_argument("--proj_name", type=str, default="LLM-TSCS-extreme")
+    parser.add_argument("--new_max_tokens", type=int, default=2048)
+    parser.add_argument("--proj_name", type=str, default="lightgpt")
     parser.add_argument("--eightphase", action="store_true", default=False)
     parser.add_argument("--multi_process", action="store_true", default=True)
     parser.add_argument("--workers", type=int, default=1)
-    parser.add_argument("--dataset", type=str, default="template")
-    parser.add_argument("--traffic_file", type=str, default="flow_main_stream.json")
+    parser.add_argument("--dataset", type=str, default="jinan")
+    parser.add_argument("--traffic_file", type=str, default="anon_3_4_jinan_real.json")
+    parser.add_argument("--mode", type=str, default="Normal", help="Normal/NC")
+    # Normal
+    # NC: Neighbor Communication
 
     return parser.parse_args()
 
@@ -53,6 +56,11 @@ def main(in_args):
         road_net = "28_7"
         traffic_file_list = ["anon_28_7_newyork_real_double.json", "anon_28_7_newyork_real_triple.json"]
         template = "NewYork"
+    elif in_args.dataset == 'synthetic_4x4':
+        count = 3600
+        road_net = "4_4"
+        traffic_file_list = ["anon_4_4_synthetic.json", "anon_4_4_synthetic_8000.json"]
+        template = "Synthetic"
     in_args.model = in_args.memo
 
     # flow_file error
@@ -72,7 +80,8 @@ def main(in_args):
         "LLM_PATH": in_args.llm_path,
         "LLM_MODEL": in_args.llm_model,
         "LOG_DIR": f"./{in_args.llm_model}_logs",
-        "NEW_MAX_TOKENS": in_args.new_max_tokens
+        "NEW_MAX_TOKENS": in_args.new_max_tokens,
+        "MODE": in_args.mode
     }
 
     dic_traffic_env_conf_extra = {
@@ -127,7 +136,7 @@ def main(in_args):
     }
 
     trainer = LLM_Inference(dic_agent_conf_extra,
-                            merge(dic_traffic_env_conf, dic_traffic_env_conf_extra),
+                            merge(dic_traffic_env_conf, dic_traffic_env_conf_extra), # dic_traffic_env_conf = None
                             dic_path_extra,
                             f'{template}-{road_net}', in_args.traffic_file.split(".")[0])
 

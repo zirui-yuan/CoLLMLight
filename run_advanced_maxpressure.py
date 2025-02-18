@@ -14,8 +14,8 @@ def parse_args():
     parser.add_argument("--eightphase", action="store_true", default=False)
     parser.add_argument("--multi_process", action="store_true", default=True)
     parser.add_argument("--workers", type=int, default=1)
-    parser.add_argument("--dataset", type=str, default="template")
-    parser.add_argument("--traffic_file", type=str, default="flow_main_stream.json")
+    parser.add_argument("--dataset", type=str, default="jinan")
+    parser.add_argument("--traffic_file", type=str, default="anon_3_4_jinan_synthetic_24h.json")
 
     return parser.parse_args()
 
@@ -24,10 +24,11 @@ def main(in_args):
     traffic_file_list = []
 
     if in_args.dataset == 'jinan':
-        count = 3600
+        # count = 3600
+        count = 86400
         road_net = "3_4"
         traffic_file_list = ["anon_3_4_jinan_real.json", "anon_3_4_jinan_real_2000.json",
-                             "anon_3_4_jinan_real_2500.json", "anon_3_4_jinan_synthetic_24000_60min.json"]
+                             "anon_3_4_jinan_real_2500.json", "anon_3_4_jinan_synthetic_24000_60min.json", "anon_3_4_jinan_synthetic_24h.json"]
         template = "Jinan"
     elif in_args.dataset == 'hangzhou':
         count = 3600
