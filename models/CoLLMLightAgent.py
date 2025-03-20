@@ -25,8 +25,8 @@ class IntersectionAgent(object):
         self.llm_engine = LLM
         self.area_inter_num = self.size[0] * self.size[1]
         self.intersection_list = traffic_env_conf['intersection_list']
-        self.think_mode = agent_conf['think_mode']
-        self.h_w_size = agent_conf['h_w_size']
+        self.think_mode = agent_conf['think_mode'] if 'think_mode' in agent_conf else None
+        self.h_w_size = agent_conf['h_w_size'] if 'h_w_size' in agent_conf else None
         
         
 

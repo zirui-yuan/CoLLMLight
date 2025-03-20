@@ -1,35 +1,29 @@
-from utils.LLMs import GPT_model
+import argparse
+from utils.LLMs import LLAMA_model
 import json
 import re
 from tqdm import tqdm
 from collections import defaultdict
+import random
 
-LLM = GPT_model(model = 'gpt-4')
+parser = argparse.ArgumentParser(description='Process some integers.')
+parser.add_argument('--model_path', type=str,  default="/hpc2hdd/home/ziruiyuan/data/LLMs/LLama/Meta-Llama-3___1-8B-Instruct", help='Path to the model')
+args = parser.parse_args()
+model_path = args.model_path
 
+LLM = LLAMA_model(model = model_path)
 
 root_path = './data/FinetuneData/'
 init_file_path = root_path + 'SynTrain_sample.json'
-# exist_data_path = root_path + 'old_data_ft_aql2.json'
-new_data_phase1 = []
-new_data = []
-
-# exist_data_list = []
-# with open(exist_data_path, 'r') as f:
-#     exist_data = json.load(f)
-# for item in exist_data:
-#     exist_data_list.append(item['data'])
 
 with open(init_file_path, 'r') as file:
     init_data_list = json.load(file)
 
-# data_list = []
-# for item in init_data_list:
-#     if item not in exist_data_list:
-#         data_list.append(item)
-
-# data_list = data_list[-10:]
-
+random.shuffle(init_data_list)
 data_list = init_data_list
+
+
+
 print('len data list', len(data_list))
 
 
@@ -42,14 +36,24 @@ def extract_json(response):
             return data
         else:
             print("No JSON data found in the response.")
-            return ""
+            return None
         
     except json.JSONDecodeError as e:
-        raise RuntimeError(f"Parse error: {e}")
+        print(f"JSON decode error: {e}")
+        return None
 
 
 def convert_dict_to_numbered_text(input_dict):  
-
+    """  
+    将字典转换为带序号的文本段落，关键词加粗并换行  
+    
+    参数:  
+    input_dict (dict): 输入的字典  
+    
+    返回:  
+    str: 带序号的文本段落  
+    """  
+    # 使用enumerate生成带序号的文本行  
     numbered_lines = [  
         f"{index + 1}. **{key}**:\n{value}\n"   
         for index, (key, value) in enumerate(input_dict.items())  
@@ -218,10 +222,10 @@ def get_back_ground_and_note_text():
     input += "An intersection has 12 lanes: [NL, NT, NR, SL, ST, SR, EL, ET, ER, WL, WT, WR]. Each lane is labeled by direction and movement: N for north, S for south, E for east, W for west, L for left turn, T for through, and R for right turn. For instance, ET stands for the East Through lane, where traffic moves straight ahead from east to west. WL is the West Left-turn lane, where traffic turns left from west to south. Right turns are always allowed. There are four signal options: [ETWT, NTST, ELWL, NLSL]. For example, ETWT indicates the release of both the ET and WT lanes. The signal phase duration is set to thirty seconds.\n\n"
     input += "## Note:\n"
     input += """For each Lane X, when considering activating it, keep these in mind: 
-- NEVER let the occupancy of X's ANY downstream lane be close to 100% at any risk, as it will cause severe congestion.
+- NEVER let the occupancy of X's downstream lanes be close to 100% at any risk, as it will cause severe congestion.
 - If the upstream or downstream information of X isn't mentioned, it means that they are in a good state with low occupancy.
 - You MUST consider how much the occupancy of X's downstream lanes will increase upon releasing lane X. 
-- You MUST delay the release of X if ANY of its downstream has a high occupancy rate.
+- You MUST delay the release of X if its downstream has a high occupancy rate.
 - If there are many high-occupancy lanes upstream of X and X's occupancy is not low, you MUST consider releasing X so as to help upstream lanes release.
 - You can't keep a lane waiting for too long. You MUST release the lane with excessive waiting time when the downstream condition allows.\n\n"""
     return input
@@ -287,8 +291,8 @@ def get_first_stage_analysis(data):
     input += "## Task:\n"
     input += """Conduct a comprehensive analysis by following these steps:
 1. **Current Traffic Data Analysis**: Rank lanes based on queued cars and waiting times.
-2. **Upstream Analysis**: Assess the conditions of nearby and long-distance upstream lanes for each lane, which lanes has a high upstream pressure.
-3. **Downstream Analysis**: Assess the conditions of nearby and long-distance downstream lanes for each lane. Specifically, determine if the occupancy of any downstream lane approaches 100% or over 100%.\n\n"""
+2. **Upstream Analysis**: Assess the conditions of nearby and long-distance upstream lanes for each lane.
+3. **Downstream Analysis**: Assess the conditions of nearby and long-distance downstream lanes for each lane.\n\n"""
     input += "## Requirement:\n"
     input += """Please provide a JSON formatted output as follows:
 ```json  
@@ -341,8 +345,8 @@ def get_final_results(first_stage_analysis, signal_consequence_text):
     input_text += signal_consequence_text
     input_text += "## Task:\n"
     input_text += "You need to complete the rest of the analysis and select the optimal signal based on the analysis results.\n"
-    input_text += """5. **Signal Comparison**: Systematically compare the effects of each signal option. 
-6. **Decision Making**: Make a decision on the optimal signal to activate, remember the note, NEVER let the occupancy of X's ANY downstream lane be close to 100% at any risk, as it will cause severe congestion.\n\n"""
+    input_text += """5. **Signal Comparison**: Systematically compare the effects of each signal option.
+6. **Decision Making**: Make a decision on the optimal signal to activate.\n\n"""
     input_text += "## Requirement:\n"
     input_text += """Please provide a JSON formatted output as follows:
 ```json
@@ -468,40 +472,92 @@ def get_output_text(phase1_results, phase2_results):
     return result_string
 
 
-## phase1 identification
-for i, data in enumerate(tqdm(data_list)):
-    new_item = {}
-    phase1_results = get_phase1_results(data)
-    new_item['phase1_results'] = phase1_results
-    new_item['data'] = data
-    new_data_phase1.append(new_item)
-    print('total consume: {}'.format(LLM.total_consume))
-    if i % 100 == 0:
-        with open(root_path + 'new_data_phase1.json', 'w') as f:
-            json.dump(new_data_phase1, f, indent=4)
 
-## phase1 save
-with open(root_path + 'new_data_phase1.json', 'w') as f:
-    json.dump(new_data_phase1, f, indent=4)
+# ## phase1 save
+# with open(root_path + 'new_data_phase1.json', 'w') as f:
+#     json.dump(new_data_phase1, f, indent=4)
 
-## phase2data generation
-for i, data in enumerate(tqdm(new_data_phase1)):
-    new_item = {}
-    new_item['phase1_results'] = data['phase1_results']
-    phase1_type = new_item['phase1_results']['phase1']['answer']
-    new_item['phase2_results'] = get_phase2_results(phase1_type, data['data'])
-    new_item['data'] = data['data']
-    new_item['input_text'] = get_input_text(data['data'])
-    new_item['output_text'] = get_output_text(new_item['phase1_results'], new_item['phase2_results'])
-    new_data.append(new_item)
-    print('total consume: {}'.format(LLM.total_consume))
-    if i % 100 == 0:
-        with open(root_path + 'syntrain_reasoning_tuning.json', 'w') as f:
-            json.dump(new_data, f, indent=4)
+## phase1 explore
+system_prompt = "You are a traffic signal expert responsible for managing a four-way intersection. Your primary goal is to assess the current coordination level and implement appropriate signal selection strategies. Aim to optimize traffic flow and safety, considering not only your intersection but also the impacts on adjacent upstream and downstream intersections."
+wrong_problem_list = []
+wrong_problem_real_answer_list = []
+batch_prompt_list = []
+batch_answer_list = []
+for data in tqdm(data_list):
+    prompt = get_input_text(data)
+    batch_prompt_list.append(prompt)
+    answer = data['Best_Signal']
+    batch_answer_list.append(answer)
+#check answer
+# if len(first_batch_prompt_list) >= 100:
+#     for i in range(0, len(first_batch_prompt_list), 100):
+#         batch_response = self.LLM.batch_ask(first_batch_prompt_list[i:i+100], system_prompt)
+#         fast_thinking_response.extend(batch_response)
+# else:
+#     fast_thinking_response = self.LLM.batch_ask(first_batch_prompt_list, system_prompt)
+if len(batch_prompt_list) > 100:
+    batch_response = []
+    for i in tqdm(range(0, len(batch_prompt_list), 100)):
+        batch_response.extend(LLM.batch_ask(batch_prompt_list[i:i+100], system_prompt))
+else:
+    batch_response = LLM.batch_ask(batch_prompt_list, system_prompt)
 
-# new_data = exist_data + new_data
+
+for i in range(len(batch_response)):
+    response = batch_response[i]
+    real_answer = batch_answer_list[i]
+    answer_dict = extract_json(response)
+    if answer_dict:
+        if 'phase2' in answer_dict:
+            if 'answer' in answer_dict['phase2']:
+                signal = answer_dict['phase2']['answer']
+                if signal != real_answer:
+                    wrong_problem_list.append(batch_prompt_list[i])
+                    wrong_problem_real_answer_list.append(real_answer)
+                continue
+    wrong_problem_list.append(batch_prompt_list[i])
+    wrong_problem_real_answer_list.append(real_answer)
+
+print('len wrong problem: ', len(wrong_problem_list))
+
+## imitation
+new_data_list = []
+new_responses = []
+llm_params = {
+    "temperature": 1.0
+}
+LLM = LLAMA_model(llm_params = llm_params, model = model_path) 
+new_data_list = []
+for _ in range(4):
+    if len(wrong_problem_list) > 100:
+        batch_response = []
+        for i in tqdm(range(0, len(wrong_problem_list), 100)):
+            batch_response.extend(LLM.batch_ask(wrong_problem_list[i:i+100], system_prompt))
+    else:
+        batch_response = LLM.batch_ask(wrong_problem_list, system_prompt)
+    batch_response = LLM.batch_ask(wrong_problem_list, system_prompt)
+    new_correct_loc_list = []
+    for i in range(len(batch_response)):
+        response = batch_response[i]
+        real_answer = wrong_problem_real_answer_list[i]
+        answer_dict = extract_json(response)
+        if answer_dict:
+            if 'phase2' in answer_dict:
+                if 'answer' in answer_dict['phase2']:
+                    signal = answer_dict['phase2']['answer']
+                    if signal == real_answer:
+                        new_item = {}
+                        new_item['instruction'] = system_prompt
+                        new_item['input'] = wrong_problem_list[i]
+                        new_item['output'] = batch_response[i]
+                        new_correct_loc_list.append(i)
+                        new_data_list.append(new_item)
+    wrong_problem_list = [item for i, item in enumerate(wrong_problem_list) if i not in new_correct_loc_list]
+    wrong_problem_real_answer_list = [item for i, item in enumerate(wrong_problem_real_answer_list) if i not in new_correct_loc_list]                    
+    print('remain wrong problem num: ', len(wrong_problem_list))
+    if len(wrong_problem_list) == 0:
+        break
 ## save
-
-with open(root_path + 'syntrain_reasoning_tuning.json', 'w') as f:
-    json.dump(new_data, f, indent=4)
+with open(root_path + 'syntrain_refine.json', 'w') as f:
+    json.dump(new_data_list, f, indent=4)
 
