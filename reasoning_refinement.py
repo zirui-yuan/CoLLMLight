@@ -7,7 +7,7 @@ from collections import defaultdict
 import random
 
 parser = argparse.ArgumentParser(description='Process some integers.')
-parser.add_argument('--model_path', type=str,  default="/hpc2hdd/home/ziruiyuan/data/LLMs/LLama/Meta-Llama-3___1-8B-Instruct", help='Path to the model')
+parser.add_argument('--model_path', type=str, help='Path to the model')
 args = parser.parse_args()
 model_path = args.model_path
 
