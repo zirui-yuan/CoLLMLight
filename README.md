@@ -41,7 +41,7 @@ python run_fts.py
 ```
 The sampled data will be saved in `./data/FinetuneData/SynTrain_sample.json`.
 
-### Step 2: Synthetic Reasoning Chain
+### Step 2: Reasoning Chain Optimization
 You need to set your API key in `./utils/LLMs.py` first.
 Then, use GPT-4o and the simulation data to generate the synthetic reasoning chain. Execute the command below:
 ```shell
