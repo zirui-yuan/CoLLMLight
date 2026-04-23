@@ -19,6 +19,7 @@ def parse_args():
 
     return parser.parse_args()
 
+
 def main(in_args):
     traffic_file_list = []
 
